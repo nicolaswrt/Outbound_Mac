@@ -1,0 +1,54 @@
+﻿name: Build macOS app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build-mac:
+    strategy:
+      matrix:
+        include:
+          - runner: macos-13   # Intel
+            arch: x86_64
+          - runner: macos-14   # Apple Silicon
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install Python deps
+        run: |
+          python -m pip install -U pip pyinstaller selenium
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+
+      - name: Install GeckoDriver (mac)
+        run: |
+          brew install geckodriver
+          cp "$(which geckodriver)" geckodriver
+          chmod +x geckodriver
+
+      - name: Build .app with PyInstaller
+        run: |
+          rm -rf build dist Bullseye.spec
+          pyinstaller -y --clean --windowed --name Bullseye \
+            --add-binary "geckodriver:." \
+            --add-data "assets:assets" \
+            bullseye_app.py
+
+      - name: Zip the app for download
+        run: |
+          ditto -c -k --sequesterRsrc --keepParent "dist/Bullseye.app" "Bullseye-${{ matrix.arch }}.zip"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Bullseye-${{ matrix.arch }}
+          path: Bullseye-${{ matrix.arch }}.zip
